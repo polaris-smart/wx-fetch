@@ -46,9 +46,25 @@ def parse(raw):
     title = pick(raw, r'id="activity-name"[^>]*>(.*?)</h1>')
     acct  = pick(raw, r'id="js_name"[^>]*>(.*?)</a>')
     ts    = pick(raw, r'var ct = "(\d+)"')
+    
+    # 微信反爬升级：正文可能从 #js_content 移到了 JS 变量 content_noencode
+    content_noencode = None
+    m_noencode = re.search(r"content_noencode: '(.*?)',", raw, re.S)
+    if m_noencode:
+        text = m_noencode.group(1)
+        text = text.replace("\\x0a", "\n").replace("\\x0b", " ").replace("\\x0c", " ")
+        text = text.replace("\\x3c", "<").replace("\\x3e", ">").replace("\\x22", '"').replace("\\x26", "&")
+        text = H.unescape(text)
+        content_noencode = re.sub(r"<[^>]+>", "", text)
+    
     m = (re.search(r'id="js_content"[^>]*>(.*?)</div>\s*<script', raw, re.S)
          or re.search(r'id="js_content"[^>]*>(.*)', raw, re.S))
     body = clean(m.group(1)) if m else ""
+    
+    # 如果 js_content 为空但 content_noencode 有内容，用 content_noencode 兜底
+    if not body and content_noencode:
+        body = content_noencode
+    
     if not body:
         for kw in ["该内容已被发布者删除","此内容因违规无法查看","已停止访问"]:
             if kw in raw: return None, f"文章不可访问：{kw}"
